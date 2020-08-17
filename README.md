@@ -44,7 +44,7 @@ exist in the star-imported libraries, and if so, the relevant use is updated to 
 full `os.path.xxx` or similar name.
  - The input source file line is permuted with the generated changes
 
-Notes:
+Notes and Caveats:
 ---------
 
 Note that this is *not* a perfect tool, but if you're dealing with horrible code that
@@ -57,6 +57,28 @@ inspection of all the function calls.
 It also can run into issues where one library star-imports another, because symbols can
 then be present in multiple star-imported packages. It chooses the package with the
 shortest name, which is basically an arbitrary decision.
+
+
+Basically:
+```  
+library_1
+ (contains thing)
+   +    +
+   |    |
+   |    +>library_2
+   |     (from library_1 import thing)
+   |        +
+   |        |
+   v        v
+Target script
+from library_1 import *
+from library_2 import *
+
+```
+
+Since the tool sees "thing" in both library_1 and library_2, it may replace
+references to "thing" with "library_2.thing". This will function, though it 
+can be confusing.
 
 This uses some string-munging hacks, mostly rather then rewriting the AST, and mirroring
 the rewritten AST back to source via `astor`, it instead uses the AST to determine precise
