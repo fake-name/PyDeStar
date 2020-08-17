@@ -101,32 +101,44 @@ def dump_tree(filecontents, filename):
 def extract_attribute(target):
     target_in = target
     item_path = []
+
     if isinstance(target, ast.Name):
-        return target.id
+        return [target.id]
     if isinstance(target, ast.Subscript):
         return extract_attribute(target.value)
-    while isinstance(target.value, ast.Attribute):
-        try:
+    if isinstance(target, ast.Call):
+        return extract_attribute(target.func)
+    if isinstance(target, ast.BinOp):
+        return []
+
+    try:
+        while isinstance(target.value, ast.Attribute):
             item_path.append(target.attr)
             target = target.value
-        except Exception:
-            import pdb
-            pdb.set_trace()
+    except Exception as e:
+        import pdb
+        import traceback
+        traceback.print_exc()
+        pdb.set_trace()
 
     item_path.append(target.attr)
 
     if isinstance(target.value, ast.Name):
         item_path.append(target.value.id)
+    elif isinstance(target.value, ast.BinOp):
+        return extract_attribute(target.value.left) + extract_attribute(target.value.right)
     elif isinstance(target.value, ast.Call):
-        item_path.append(extract_attribute(target.value.func))
+        item_path += extract_attribute(target.value.func)
     elif isinstance(target.value, ast.Str):
         item_path.append(target.value.s)
     elif isinstance(target.value, ast.Subscript):
-        item_path.append(extract_attribute(target.value.value))
+        item_path += extract_attribute(target.value.value)
     else:
         print("Dynamic attribute! How?")
         print(ast.dump(target))
-        # raise RuntimeError
+        import pdb
+        pdb.set_trace()
+        raise RuntimeError
 
     # Attribute objects are unwrapped in reverse order.
     item_path.reverse()
@@ -135,7 +147,7 @@ def extract_attribute(target):
         ast.dump(target_in))
 
     fqpath = ".".join(item_path)
-    return fqpath
+    return [fqpath]
 
 class ProtectedVisitor(ast.NodeVisitor):
     def __init__(self):
@@ -148,7 +160,8 @@ class ProtectedVisitor(ast.NodeVisitor):
             for sub_target in target.elts:
                 self._extract_targets(sub_target)
         elif isinstance(target, ast.Attribute):
-            self.assigned_names.add(extract_attribute(target))
+            for name in extract_attribute(target):
+                self.assigned_names.add(name)
         elif isinstance(target, ast.Subscript):
             self._extract_targets(target.value)
         else:
@@ -197,14 +210,14 @@ class WildcardFixer(ast.NodeVisitor):
 
     def visit_Call(self, node):
         as_src = astor.to_source(node)
-        fname = "."
+        fnames = []
         fnode = node.func
         if isinstance(fnode, ast.Name):
-            fname = fnode.id
+            fnames.append(fnode.id)
             # print("Fname:", fname)
         elif isinstance(fnode, ast.Attribute):
             try:
-                fname = extract_attribute(fnode)
+                fnames = extract_attribute(fnode)
             except RuntimeError:
                 print("Wat?")
                 print("""'''""")
@@ -214,45 +227,48 @@ class WildcardFixer(ast.NodeVisitor):
             print("Wat?")
             # print(ast.dump(node))
             print(ast.dump(node.func))
+            fnames.append(".")
 
-        if not "." in fname:
-            keys = list(self.bad_contexts.keys())
-            keys.sort(key=lambda x: str(x))
+        for fname in fnames:
+            if not "." in fname:
+                keys = list(self.bad_contexts.keys())
+                keys.sort(key=lambda x: str(x))
 
-            if fname not in self.protected_names:
-                for mod_name in keys:
-                    if fname in self.bad_contexts[mod_name][1]:
+                if fname not in self.protected_names:
+                    for mod_name in keys:
+                        if fname in self.bad_contexts[mod_name][1]:
 
-                        # I'm not /totally/ sure where the -1 offset is coming from.
-                        assert fname in self.source_listing[node.lineno-1]
+                            # I'm not /totally/ sure where the -1 offset is coming from.
+                            assert fname in self.source_listing[node.lineno-1]
 
-                        old_pattern = r"\b{}\(".format(fname)
-                        new_pattern = r"{}.{}(".format(self.bad_contexts[mod_name][0], fname)
+                            old_pattern = r"\b{}\(".format(fname)
+                            new_pattern = r"{}.{}(".format(self.bad_contexts[mod_name][0], fname)
 
 
-                        if new_pattern not in self.source_listing[node.lineno-1]:
-                            patched = re.sub(old_pattern, new_pattern, self.source_listing[node.lineno-1])
-                            # print("Should canonize? {} -> contained by: {}:{}".format(fname.ljust(15), mod_name, self.bad_contexts[mod_name][0]))
-                            # print(self.source_listing[node.lineno-1])
-                            # print(patched)
-                            self.source_listing[node.lineno-1] = patched
-                        break
+                            if new_pattern not in self.source_listing[node.lineno-1]:
+                                patched = re.sub(old_pattern, new_pattern, self.source_listing[node.lineno-1])
+                                # print("Should canonize? {} -> contained by: {}:{}".format(fname.ljust(15), mod_name, self.bad_contexts[mod_name][0]))
+                                # print(self.source_listing[node.lineno-1])
+                                # print(patched)
+                                self.source_listing[node.lineno-1] = patched
+                            break
 
         self.generic_visit(node)
 
         return node
 
     def visit_Attribute(self, node):
-        fname = extract_attribute(node)
+        fnames = extract_attribute(node)
 
         keys = list(self.bad_contexts.keys())
         keys.sort(key=lambda x: str(x))
 
-        if fname not in self.protected_names:
-            for mod_name in keys:
-                if fname in self.bad_contexts[mod_name][1]:
-                    print(fname, ast.dump(node))
-                    pass
+        for fname in fnames:
+            if fname not in self.protected_names:
+                for mod_name in keys:
+                    if fname in self.bad_contexts[mod_name][1]:
+                        print(fname, ast.dump(node))
+                        pass
 
         self.generic_visit(node)
 
