@@ -1,141 +1,76 @@
 =========
-autoflake
+PyDeStar
 =========
-
-.. image:: https://travis-ci.org/myint/autoflake.svg?branch=master
-    :target: https://travis-ci.org/myint/autoflake
-    :alt: Build status
 
 
 Introduction
 ============
 
-*autoflake* removes unused imports and unused variables from Python code. It
-makes use of pyflakes_ to do this.
+Do you have python scripts that use `from xxx import *` from half a dozen packages?
+Is their code nearly impossible to follow as a result?
 
-By default, autoflake only removes unused imports for modules that are part of
-the standard library. (Other modules may have side effects that make them
-unsafe to remove automatically.) Removal of unused variables is also disabled
-by default.
-
-autoflake also removes useless ``pass`` statements.
-
-.. _pyflakes: http://pypi.python.org/pypi/pyflakes
+PyDeStar walks the AST of your python script, and rewrites your code with fully qualified
+names.
 
 
-Example
-=======
+How:
+---------
 
-Running autoflake on the below example::
+This handles arbitrary cases with star imports.
 
-    $ autoflake --in-place --remove-unused-variables example.py
+All star imports are replaced with flat imports:
 
-.. code-block:: python
+```
+from os.path import *
 
-    import math
-    import re
-    import os
-    import random
-    import multiprocessing
-    import grp, pwd, platform
-    import subprocess, sys
+val = join("yes", "path")
+```
 
+Is converted to
 
-    def foo():
-        from abc import ABCMeta, WeakSet
-        try:
-            import multiprocessing
-            print(multiprocessing.cpu_count())
-        except ImportError as exception:
-            print(sys.version)
-        return math.pi
+```
+import os.path
 
-results in
-
-.. code-block:: python
-
-    import math
-    import sys
+val = os.path.join("yes", "path")
+```
 
 
-    def foo():
-        try:
-            import multiprocessing
-            print(multiprocessing.cpu_count())
-        except ImportError:
-            print(sys.version)
-        return math.pi
+The star-imported libraries are scanned for exported symbols.
+
+All functions and variables are examined. Any names which are assigned to are masked off.
+Function calls and constants used in the `rhs` of an assignment are checked to see if they
+exist in the star-imported libraries, and if so, the relevant use is updated to use the
+full `os.path.xxx` or similar name.
+
+Note that this is *not* a perfect tool, but if you're dealing with horrible code that
+star-imports a lot of different packages, it can fix probably >95% of the star-imported stuff.
+
+It won't work for dynamic attribute lookup (`getattr()`), or other high-dynamism approaches,
+but I don't think there's a way of fixing those sort of things short of runtime
+inspection of all the function calls.
+
+It also can run into issues where one library star-imports another, because symbols can
+then be present in multiple star-imported packages. It chooses the package with the
+shortest name, which is basically an arbitrary decision.
+
+This uses some string-munging hacks, mostly rather then rewriting the AST, and mirroring
+the rewritten AST back to source via `astor`, it instead uses the AST to determine precise
+strings which are then used to search+replace in the text source on a per-line basis.
+This was primarily chosen because it was far easier to implement, though it means that it is
+probably possible to come up with a malicious input source file that would result in a
+harmful output. However, this tool assumes it'll be used as part of a programmer-driven
+refactoring with a human in the loop, which would render such things harmless.
+
+Basically, it's a refactoring tool, more then a daily-use fixer. OTOH, for
+one-iff refactoring large codebases/scripts that have bad practices, it is hugely useful.
+
+---------------
 
 
-Installation
-============
-::
-
-    $ pip install --upgrade autoflake
-
-
-Advanced usage
-==============
-
-To allow autoflake to remove additional unused imports (other than
-than those from the standard library), use the ``--imports`` option. It
-accepts a comma-separated list of names::
-
-    $ autoflake --imports=django,requests,urllib3 <filename>
-
-To remove all unused imports (whether or not they are from the standard
-library), use the ``--remove-all-unused-imports`` option.
-
-To remove unused variables, use the ``--remove-unused-variables`` option.
-
-Below is the full listing of options::
-
-    usage: autoflake [-h] [-i] [-r] [--exclude globs] [--imports IMPORTS]
-                     [--expand-star-imports] [--remove-all-unused-imports]
-                     [--remove-duplicate-keys] [--remove-unused-variables]
-                     [--version]
-                     files [files ...]
-
-    Removes unused imports and unused variables as reported by pyflakes.
-
-    positional arguments:
-      files                 files to format
-
-    optional arguments:
-      -h, --help            show this help message and exit
-      -i, --in-place        make changes to files instead of printing diffs
-      -r, --recursive       drill down directories recursively
-      --exclude globs       exclude file/directory names that match these comma-
-                            separated globs
-      --imports IMPORTS     by default, only unused standard library imports are
-                            removed; specify a comma-separated list of additional
-                            modules/packages
-      --expand-star-imports
-                            expand wildcard star imports with undefined names;
-                            this only triggers if there is only one star import in
-                            the file; this is skipped if there are any uses of
-                            `__all__` or `del` in the file
-      --remove-all-unused-imports
-                            remove all unused imports (not just those from the
-                            standard library)
-      --remove-duplicate-keys
-                            remove all duplicate keys in objects
-      --remove-unused-variables
-                            remove unused variables
-      --version             show program's version number and exit
+This was based originally on the `autoflake` tool (https://github.com/myint/autoflake), but
+after it languished as a open PR for more then two years (https://github.com/myint/autoflake/pull/31),
+and I periodically revisited it when dealing with random scripts, I've decided to package it up as it's
+own thing.
 
 
-Tests
-=====
 
-To run the unit tests::
-
-    $ ./test_autoflake.py
-
-There is also a fuzz test, which runs against any collection of given Python
-files. It tests autoflake against the files and checks how well it does by
-running pyflakes on the file before and after. The test fails if the pyflakes
-results change for the worse. (This is done in memory. The actual files are
-left untouched.)::
-
-    $ ./test_fuzz.py --verbose
