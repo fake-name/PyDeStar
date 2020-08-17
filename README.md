@@ -11,6 +11,14 @@ Is their code nearly impossible to follow as a result?
 PyDeStar walks the AST of your python script, and rewrites your code with fully qualified
 names.
 
+Usage:
+
+```
+pydestar.py <file.py> <-i (to write changes)>
+```
+
+Requires the `astor` package as it's only dependency. Currently tested on >= python3.5.
+
 
 What
 ---------
