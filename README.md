@@ -12,7 +12,7 @@ PyDeStar walks the AST of your python script, and rewrites your code with fully 
 names.
 
 
-How:
+What
 ---------
 
 This handles arbitrary cases with star imports.
@@ -33,13 +33,19 @@ import os.path
 val = os.path.join("yes", "path")
 ```
 
+How:
+---------
 
-The star-imported libraries are scanned for exported symbols.
-
-All functions and variables are examined. Any names which are assigned to are masked off.
-Function calls and constants used in the `rhs` of an assignment are checked to see if they
+ - The star-imported libraries are scanned for exported symbols.
+ - All functions and variables are examined.   
+   Any names which are assigned to are masked off.  
+   Function calls and constants used in the `rhs` of an assignment are checked to see if they
 exist in the star-imported libraries, and if so, the relevant use is updated to use the
 full `os.path.xxx` or similar name.
+ - The input source file line is permuted with the generated changes
+
+Notes:
+---------
 
 Note that this is *not* a perfect tool, but if you're dealing with horrible code that
 star-imports a lot of different packages, it can fix probably >95% of the star-imported stuff.
